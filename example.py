@@ -13,11 +13,9 @@ def main():
         "introduce yourself",
         "list all prime numbers within 100",
     ]
-    
     print(f"testForNOtemplate:{prompts[0]!r}")
-    ids=tokenizer(prompts[0])
+    ids=tokenizer.encode(prompts[0])
     print(ids[:],"len:",len(ids))
-    print("eos_id:",tokenizer.eos_token_id)
 
     prompts = [
         tokenizer.apply_chat_template(
@@ -27,6 +25,12 @@ def main():
         )
         for prompt in prompts
     ]
+
+    print(f"testForNOtemplate:{prompts[0]!r}")
+    ids=tokenizer.encode(prompts[0])
+    print(ids[:],"len:",len(ids))
+    print("eos_id:",tokenizer.eos_token_id)
+    
     outputs = llm.generate(prompts, sampling_params)
 
     for prompt, output in zip(prompts, outputs):
