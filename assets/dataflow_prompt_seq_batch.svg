@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="1012" viewBox="0 0 680 1012" role="img">
+<title>nano-vllm 中 prompt 到 batch 到输出的完整数据流</title>
+<desc>prompt 字符串经分词成为 token id，封装为 Sequence 入调度队列，调度后组成 batch，再由 model_runner 翻译成三套描述交给 GPU，前向采样得到 token 后写回序列并进入下一轮。</desc>
+<style>
+text{font-family:'Segoe UI','Microsoft YaHei','PingFang SC',ui-sans-serif,system-ui,sans-serif}
+.m{font-family:ui-monospace,'Cascadia Code',Consolas,'Courier New',monospace}
+</style>
+<defs>
+<marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+<path d="M2 1L8 5L2 9" fill="none" stroke="context-stroke" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</marker>
+</defs>
+
+<rect x="0" y="0" width="680" height="1012" fill="#FFFFFF"/>
+
+<text x="175" y="164" text-anchor="end" dominant-baseline="central" font-size="12" fill="#888780">输入</text>
+<text x="175" y="404" text-anchor="end" dominant-baseline="central" font-size="12" fill="#888780">调度</text>
+<text x="175" y="590" text-anchor="end" dominant-baseline="central" font-size="12" fill="#888780">翻译</text>
+<text x="175" y="824" text-anchor="end" dominant-baseline="central" font-size="12" fill="#888780">执行</text>
+
+<g>
+<rect x="190" y="40" width="300" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="340" y="60" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#3C3489">LLMEngine.generate()</text>
+<text x="340" y="79" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">接收 prompts，逐个转发</text>
+</g>
+<line x1="340" y1="96" x2="340" y2="133" stroke="#888780" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<text class="m" x="354" y="114" dominant-baseline="central" font-size="12" fill="#444441">prompt: str</text>
+
+<g>
+<rect x="190" y="136" width="300" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="340" y="156" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#3C3489">LLMEngine.add_request()</text>
+<text x="340" y="175" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">tokenizer.encode() 分词</text>
+</g>
+<line x1="340" y1="192" x2="340" y2="229" stroke="#888780" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<text class="m" x="354" y="210" dominant-baseline="central" font-size="12" fill="#444441">prompt: list[int]</text>
+
+<g>
+<rect x="190" y="232" width="300" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="340" y="252" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#3C3489">Sequence.__init__()</text>
+<text x="340" y="271" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">打包 token_ids + 采样参数</text>
+</g>
+<line x1="340" y1="288" x2="340" y2="325" stroke="#888780" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<text class="m" x="354" y="306" dominant-baseline="central" font-size="12" fill="#444441">seq: Sequence</text>
+
+<g>
+<rect x="190" y="328" width="300" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="340" y="348" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#3C3489">Scheduler.add()</text>
+<text x="340" y="367" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">seq 入 waiting 队列</text>
+</g>
+<line x1="340" y1="384" x2="340" y2="421" stroke="#888780" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<text class="m" x="354" y="402" dominant-baseline="central" font-size="12" fill="#444441">seq（waiting / running）</text>
+
+<g>
+<rect x="190" y="424" width="300" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="340" y="444" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#3C3489">Scheduler.schedule()</text>
+<text x="340" y="463" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">选出本批 seq，写 num_scheduled_tokens</text>
+</g>
+<line x1="340" y1="480" x2="340" y2="517" stroke="#888780" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<text class="m" x="354" y="498" dominant-baseline="central" font-size="12" fill="#444441">batch: list[Sequence] + is_prefill</text>
+
+<g>
+<rect x="100" y="520" width="480" height="140" rx="12" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="340" y="546" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#3C3489">ModelRunner.run() → prepare_prefill()</text>
+<text x="340" y="566" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">把 batch 翻译成 kernel 认得的三种描述</text>
+
+<rect x="116" y="580" width="144" height="70" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="188" y="600" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="500" fill="#0C447C">① 存储层·扁平</text>
+<text class="m" x="188" y="619" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#185FA5">input_ids/positions</text>
+<text x="188" y="637" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#185FA5">多条 seq 首尾拼接</text>
+
+<rect x="268" y="580" width="144" height="70" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="340" y="600" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="500" fill="#0C447C">② 语义层·变长</text>
+<text class="m" x="340" y="619" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#185FA5">cu_seqlens_q/k</text>
+<text class="m" x="340" y="637" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#185FA5">max_seqlen_q/k</text>
+
+<rect x="420" y="580" width="144" height="70" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="0.5"/>
+<text x="492" y="600" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="500" fill="#0C447C">③ 映射层·分页</text>
+<text class="m" x="492" y="619" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#185FA5">slot_mapping</text>
+<text class="m" x="492" y="637" text-anchor="middle" dominant-baseline="central" font-size="11" fill="#185FA5">block_tables</text>
+</g>
+<line x1="340" y1="660" x2="340" y2="697" stroke="#888780" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<text x="354" y="678" dominant-baseline="central" font-size="12" fill="#444441">batch（张量化）</text>
+
+<g>
+<rect x="190" y="700" width="300" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="340" y="720" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#3C3489">Model.forward() + compute_logits()</text>
+<text x="340" y="739" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">GPU 前向，算出 logits</text>
+</g>
+<line x1="340" y1="756" x2="340" y2="793" stroke="#888780" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<text class="m" x="354" y="774" dominant-baseline="central" font-size="12" fill="#444441">logits</text>
+
+<g>
+<rect x="190" y="796" width="300" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="340" y="816" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#3C3489">Sampler.__call__()</text>
+<text x="340" y="835" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">按 temperature 采样</text>
+</g>
+<line x1="340" y1="852" x2="340" y2="889" stroke="#888780" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+<text class="m" x="354" y="870" dominant-baseline="central" font-size="12" fill="#444441">token_ids</text>
+
+<g>
+<rect x="190" y="892" width="300" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="0.5"/>
+<text x="340" y="912" text-anchor="middle" dominant-baseline="central" font-size="14" font-weight="500" fill="#3C3489">Scheduler.postprocess()</text>
+<text x="340" y="931" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#534AB7">写回 token、hash_blocks、改状态</text>
+</g>
+
+<path d="M 340 948 V 992 H 610 V 452 H 493" fill="none" stroke="#888780" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="490" y="978" text-anchor="middle" dominant-baseline="central" font-size="12" fill="#5F5E5A">未结束 → 写回 seq，进入下一轮 step()</text>
+</svg>

@@ -1,4 +1,7 @@
 # 基于nano-vllm的阅读笔记
+
+![prompt 到 batch 到输出的完整数据流](assets/dataflow_prompt_seq_batch.svg)
+
 ## config-参数的意义
 
 ```python
@@ -16,11 +19,13 @@ class Config:
     kvcache_block_size: int = 256          # 块大小
     num_kvcache_blocks: int = -1           # 块数量
 ```
+
 ### what is sequence?
 
 在example.py中，传入llmengine的generate()的是我们熟悉的prompts列表。
 
 在下面的generate函数里，将prompts和对应的采样参数打包传进add_request(),
+
 ```python
         if not isinstance(sampling_params, list):
             sampling_params = [sampling_params] * len(prompts)
@@ -41,6 +46,7 @@ class Config:
 ### what is batch？
 
 #### sequence是怎么成为batch的呢？
+
 让我们跟随warmup的流程进行简单的探索。
 
 ```python
@@ -61,8 +67,8 @@ class Config:
         torch.cuda.empty_cache()
 ```
 
-这里我们获得了整齐的seqs列表。
-正常情况，由scheduler调度num_scheduled_tokens，再在llmengine中调用run，warmup进行了绕过调度器的动作，直接调用run。
+这里我们获得了整齐的seqs列表。  
+正常情况，由scheduler调度num_scheduled_tokens，再在llmengine中调用run，warmup进行了绕过调度器的动作，直接调用run。  
 在run里面，我们迎来第一个区别prefill和decode的地方。
 
 ```python
@@ -73,12 +79,15 @@ class Config:
 此时，is_prefill为初始值1，我们进入到`prepare_prefill`
 
 #### 关键处：从 Sequence 语义到 kernel 语义的翻译
-这段代码很长，先不关注它的细节，简要地说它做的事情是：**把上面的对齐的sequence列表拼接成扁平形式**并计算变长注意力所需的累积长度、位置索引和最大长度信息。
+
+这段代码很长，先不关注它的细节，简要地说它做的事情是：**把上面的对齐的sequence列表拼接成扁平形式**并计算变长注意力所需的累积长度、位置索引和最大长度信息。  
 这个扁平的序列————`input_ids[]`就是warm_up跑的一个batch，但这只是简化的说法，更准确地说法应该是：
+
 - batch = 一组被调度的 Sequence
 - 它们在存储层被扁平化成 input_ids（token 序列）
-- 在语义层被 cu_seqlens_q/k + max_seqlen_q/k 描述成多个变长序列
-这三者合起来才构成 varlen attention 能理解的“batch”
+- 在语义层被 cu_seqlens_q/k + max_seqlen_q/k 描述成多个变长序列    
+  这三者合起来才构成 varlen attention 能理解的“batch”
+
 > 这里提到了*varlen attention*，变长注意力，将在后面再作讨论。
 
 ```python
@@ -128,11 +137,12 @@ class Config:
             return self.model.compute_logits(self.model(input_ids, positions))
 ```
 
-is_prefill=1 调用模型跑一次预热，返回。
-再调用sampler获得输出，重置上下文。
+is_prefill=1 调用模型跑一次预热，返回。  
+再调用sampler获得输出，重置上下文。  
 这就是warm_up的全流程。
 
 这下我们不仅知道了什么是**batch**，还跑通过了一次warmup流程
+
 
 ### 真正的prefill流程
 在我们讨论这个主题之前，应该要明白一件事情，上面所讨论的warmup是发生在model_runner这个模块上的。
