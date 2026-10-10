@@ -22,7 +22,7 @@ class Scheduler:
     def add(self, seq: Sequence):
         self.waiting.append(seq)
 
-    def schedule(self) -> tuple[list[Sequence], bool]:
+    def schedule(self) -> list[Sequence]:
         scheduled_seqs = []
         token_budget = self.max_num_batched_tokens
 
@@ -31,7 +31,7 @@ class Scheduler:
         while self.running and req_idx<len(self.running) and len(scheduled_seqs) < self.max_num_seqs and token_budget > 0:
             seq = self.running[req_idx]
             assert seq.block_table
-            if(seq.num_cached_tokens>=seq.num_prompt_tokens):
+            if(seq.num_cached_tokens >= seq.num_tokens-1):
                 # decode
                 while not self.block_manager.can_append(seq):
                     if(req_idx==len(self.running)-1):
@@ -56,7 +56,7 @@ class Scheduler:
                 scheduled_seqs.append(seq)
 
         if scheduled_seqs and token_budget == 0:
-            return scheduled_seqs, True
+            return scheduled_seqs
 
         # waiting
         while self.waiting and len(scheduled_seqs) < self.max_num_seqs and token_budget > 0:
@@ -75,7 +75,7 @@ class Scheduler:
             scheduled_seqs.append(seq)
 
         assert scheduled_seqs
-        return scheduled_seqs, False
+        return scheduled_seqs
 
     def preempt(self, seq: Sequence):
         seq.status = SequenceStatus.WAITING
@@ -83,15 +83,17 @@ class Scheduler:
         self.block_manager.deallocate(seq)
         self.waiting.appendleft(seq)
 
-    def postprocess(self, seqs: list[Sequence], token_ids: list[int], is_prefill: bool):
-        for seq, token_id in zip(seqs, token_ids):
+    def postprocess(self, seqs: list[Sequence], token_ids: list[int], need_logits: list[bool]):
+        token_idx = 0
+        for seq, need in zip(seqs, need_logits):
             self.block_manager.hash_blocks(seq)
             seq.num_cached_tokens += seq.num_scheduled_tokens
             seq.num_scheduled_tokens = 0
-            if is_prefill and seq.num_cached_tokens < seq.num_tokens:
+            if not need:
                 continue
-            seq.append_token(token_id)
-            if (not seq.ignore_eos and token_id == self.eos) or seq.num_completion_tokens == seq.max_tokens:
+            seq.append_token(token_ids[token_idx])
+            if (not seq.ignore_eos and token_ids[token_idx] == self.eos) or seq.num_completion_tokens == seq.max_tokens:
                 seq.status = SequenceStatus.FINISHED
                 self.block_manager.deallocate(seq)
                 self.running.remove(seq)
+            token_idx += 1

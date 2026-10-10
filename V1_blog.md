@@ -24,6 +24,8 @@
 如果希望TPOT变得平滑，那么我们就需要在每一步连续地进行decode；保持TTFT希望每一步公平地进行prefill；提高gpu利用率希望我们每一步尽可能填满预算。
 考量之下，按顺序去处理请求即FCFS是比较好的选择，这样可以在平滑地处理先到来地序列的情况下不浪费gpu的利用率。
 
+> 此处保留一个问题，在长序列存在的情况，可能出现阻塞后续请求时间过长的情况，在vllm中的实现里添加了`long_prefill_token_threshold`字段作为分块限制。它的机制是这样的：请求数为1时不启用；请求数小于阈值时随着请求数自适应；请求数大于阈值时，截断为定值。
+
 ## 先对最关键的scheduler.schedule()进行考虑
 
 **对于它的输入：running和waiting队列**
@@ -33,4 +35,17 @@
 
 其他内存分配、计算被调度token等操作与原来相似。
 
-## 底层算子需要支持prefill和decode的混合操作
+**函数返回值**
+原来会返回一个布尔值表示这个batch是需要decode还是prefill，现在这个混合调度不再需要这个标志。
+在step中应用一个标志is_uniform标志这是混合批还是decode only批次。
+
+## modelrunner
+is_uniform标志是isprefill的语义反转。
+**prepare部分**
+混合批复用prepare_prefill,decode_only批复用prepare_deocde。
+decode_only使用graph，混合批使用eager。
+其他部分注意语义的反转即可。
+
+## lm_head相关优化
+进行混批后，context的is_prefill发生语义变化，变为not is_uniform.
+在现在chunked prefil的语境下，不是每个prefill序列都需要输出logits，为了减少无用计算，在modelRunner模块的prepare_*阶段引入need_logits字段来判断batch中的每个字段是否需要进行logits计算、采样、后处理阶段写入采样token。

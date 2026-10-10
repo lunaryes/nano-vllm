@@ -57,6 +57,7 @@ class ParallelLMHead(VocabParallelEmbedding):
         context = get_context()
         if context.is_prefill:
             last_indices = context.cu_seqlens_q[1:] - 1
+            last_indices = last_indices[context.need_logits]
             x = x[last_indices].contiguous()
         logits = F.linear(x, self.weight)
         if self.tp_size > 1:

@@ -47,12 +47,14 @@ class LLMEngine:
         self.scheduler.add(seq)
 
     def step(self):
-        seqs, is_prefill = self.scheduler.schedule()
-        num_tokens = sum(seq.num_scheduled_tokens for seq in seqs) if is_prefill else -len(seqs)
-        token_ids = self.model_runner.call("run", seqs, is_prefill)
-        self.scheduler.postprocess(seqs, token_ids, is_prefill)
+        seqs = self.scheduler.schedule()
+        is_uniform = all(seq.is_prefill==0 for seq in seqs)
+        num_tokens_prefill = sum(seq.num_scheduled_tokens for seq in seqs if seq.is_prefill)
+        num_tokens_decode = sum(seq.num_scheduled_tokens for seq in seqs if not seq.is_prefill)
+        token_ids,need_logits = self.model_runner.call("run", seqs, is_uniform)
+        self.scheduler.postprocess(seqs, token_ids, need_logits)
         outputs = [(seq.seq_id, seq.completion_token_ids) for seq in seqs if seq.is_finished]
-        return outputs, num_tokens
+        return outputs, num_tokens_prefill,num_tokens_decode
 
     def is_finished(self):
         return self.scheduler.is_finished()
@@ -69,17 +71,16 @@ class LLMEngine:
         for prompt, sp in zip(prompts, sampling_params):
             self.add_request(prompt, sp)
         outputs = {}
-        prefill_throughput = decode_throughput = 0.
+        total_throughput = 0.
         while not self.is_finished():
             t = perf_counter()
-            output, num_tokens = self.step()
-            if num_tokens > 0:
-                prefill_throughput = num_tokens / (perf_counter() - t)
-            else:
-                decode_throughput = -num_tokens / (perf_counter() - t)
+            output, num_tokens_prefill, num_tokens_decode = self.step() # TODO
+            dt= perf_counter() - t
+            total_throughput = (num_tokens_prefill + num_tokens_decode) / dt
             pbar.set_postfix({
-                "Prefill": f"{int(prefill_throughput)}tok/s",
-                "Decode": f"{int(decode_throughput)}tok/s",
+                "Total_Throughput": f"{int(total_throughput)}tok/s",
+                "P": f"{int(num_tokens_prefill)}",
+                "D": f"{int(num_tokens_decode)}",
             })
             for seq_id, token_ids in output:
                 outputs[seq_id] = token_ids
