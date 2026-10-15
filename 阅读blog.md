@@ -67,8 +67,10 @@ class Config:
         torch.cuda.empty_cache()
 ```
 
-这里我们获得了整齐的seqs列表。  
-正常情况，由scheduler调度num_scheduled_tokens，再在llmengine中调用run，warmup进行了绕过调度器的动作，直接调用run。  
+这里我们获得了整齐的seqs列表。
+  
+正常情况，由scheduler调度num_scheduled_tokens，再在llmengine中调用run，warmup进行了绕过调度器的动作，直接调用run。
+  
 在run里面，我们迎来第一个区别prefill和decode的地方。
 
 ```python
@@ -80,12 +82,14 @@ class Config:
 
 #### 关键处：从 Sequence 语义到 kernel 语义的翻译
 
-这段代码很长，先不关注它的细节，简要地说它做的事情是：**把上面的对齐的sequence列表拼接成扁平形式**并计算变长注意力所需的累积长度、位置索引和最大长度信息。  
+这段代码很长，先不关注它的细节，简要地说它做的事情是：**把上面的对齐的sequence列表拼接成扁平形式**并计算变长注意力所需的累积长度、位置索引和最大长度信息。
+  
 这个扁平的序列————`input_ids[]`就是warm_up跑的一个batch，但这只是简化的说法，更准确地说法应该是：
 
 - batch = 一组被调度的 Sequence
 - 它们在存储层被扁平化成 input_ids（token 序列）
-- 在语义层被 cu_seqlens_q/k + max_seqlen_q/k 描述成多个变长序列    
+- 在语义层被 cu_seqlens_q/k + max_seqlen_q/k 描述成多个变长序列
+    
   这三者合起来才构成 varlen attention 能理解的“batch”
 
 > 这里提到了*varlen attention*，变长注意力，将在后面再作讨论。
@@ -137,8 +141,10 @@ class Config:
             return self.model.compute_logits(self.model(input_ids, positions))
 ```
 
-is_prefill=1 调用模型跑一次预热，返回。  
-再调用sampler获得输出，重置上下文。  
+is_prefill=1 调用模型跑一次预热，返回。
+  
+再调用sampler获得输出，重置上下文。
+  
 这就是warm_up的全流程。
 
 这下我们不仅知道了什么是**batch**，还跑通过了一次warmup流程
@@ -402,6 +408,7 @@ recompute比较低效，在sequence.py中实现了序列化和反序列化的魔
 #### 所需参数
 context是一个类似于config，它保存着全局的参数。
 不妨这样理解，config是对sequence的解释，context是对batch的解释。
+chofig和sequence的生存环境是全局，context和batch的生存环境应该针对于model_run,即在gpu运行的部分。
 这可以构成良好的对偶。
 > 但是要认识到这只是很简化的说法，事实上config里包含了全局的配置信息，不止属于sequence。
 当然在逻辑上，我们应该认识到context是属于**当前这一轮 forward 的整个 batch**的上下文。
@@ -418,7 +425,7 @@ class Context:
     max_seqlen_q: int = 0
     max_seqlen_k: int = 0
     slot_mapping: torch.Tensor | None = None
-    context_lens: torch.Tensor | None = None
+    context_lens: torch.Tensor | None = None 
     block_tables: torch.Tensor | None = None
 ```
 
@@ -568,6 +575,10 @@ num_slot = num_block * block_size
 至此，batch中所要被调度的token对应的block中的slot被保存在了一个队列中。
 与sequence被切分成batch类似，从block到slot是粒度的细化。
 
+##### 如何加速paged attention
+kv cache如果使用连续的形式进行存储，就会造成大量的内存碎片。这与操作系统中的页表的引入是不谋而合的。但同样的引入页表后，会产生额外的时间开销。这个开销是O(k),k为表长。
+decode阶段缓存内容很大，此时访存就成了它的主要限制。使用`flash_attn_with_kvcache`kernel进行优化。
+而在prefill阶段，kvcache占用不大。这是计算受限的过程。为了不大的额外开销引入复杂的算子反而是负优化。所以prefill时使用传统注意力加速kernel——`flash_attn_varlen_func`kernel。
 
 ### graph capture
 整体认知：
