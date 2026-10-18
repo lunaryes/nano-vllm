@@ -5,6 +5,7 @@ import torch
 @dataclass(slots=True)
 class Context:
     is_prefill: bool = False
+    num_decode: int = 0 # 混合批里的decode条数。
     cu_seqlens_q: torch.Tensor | None = None
     cu_seqlens_k: torch.Tensor | None = None
     max_seqlen_q: int = 0

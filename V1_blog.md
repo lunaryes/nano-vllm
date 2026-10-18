@@ -44,6 +44,9 @@ is_uniform标志是isprefill的语义反转。
 **prepare部分**
 混合批复用prepare_prefill,decode_only批复用prepare_deocde。
 decode_only使用graph，混合批使用eager。
+但是这样的设计会引入一个性能瓶颈。要明确的是，这个瓶颈不是来自是否使用图，而是来自attention.forward中混合批和纯decode批会选择不同的算子。其中decode批使用的算子是针对这个阶段的访存瓶颈经过特别优化的，而混合批使用的算子没有这一层优化，所以这里会引入较大的性能损失。
+为了解决这个问题，可以考虑将混合批中的decode部分分离出来让它们走decode批算子。这样做的话混合批需要发射两个算子，这里会引入算子的发射开销，在gpu资源不足时，两个算子的工作可能会串行化。
+而在vllm中将两种算子融合，做了特别的优化。 # TODO:关键是如何优化的。
 其他部分注意语义的反转即可。
 
 ## lm_head相关优化
