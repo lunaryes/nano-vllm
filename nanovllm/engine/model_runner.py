@@ -137,6 +137,7 @@ class ModelRunner:
         block_tables = None
         need_logits = [] # 是否需要进行logits计算，只有predill序列到达最后一个token和decode阶段需要。
         num_decode = 0
+        context_lens=[]
         for seq in seqs:
             start = seq.num_cached_tokens
             seqlen_q = seq.num_scheduled_tokens
@@ -149,6 +150,9 @@ class ModelRunner:
             max_seqlen_q = max(seqlen_q, max_seqlen_q)
             max_seqlen_k = max(seqlen_k, max_seqlen_k)
             need_logits.append(seq.num_scheduled_tokens + seq.num_cached_tokens == seq.num_tokens)
+            if(seq.num_cached_tokens >= seq.num_tokens - 1):
+                num_decode+=1
+            context_lens.append(len(seq))
             if not seq.block_table:    # warmup
                 continue
             start_block = start // self.block_size
@@ -170,8 +174,8 @@ class ModelRunner:
         cu_seqlens_k = torch.tensor(cu_seqlens_k, dtype=torch.int32, pin_memory=True).cuda(non_blocking=True)
         slot_mapping = torch.tensor(slot_mapping, dtype=torch.int32, pin_memory=True).cuda(non_blocking=True)
         need_logits_tensor = torch.tensor(need_logits, dtype=torch.bool, pin_memory=True).cuda(non_blocking=True)
-        num_decode=len(need_logits)
-        set_context(True,num_decode, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, max_seqlen_k, slot_mapping, None, block_tables, need_logits_tensor)
+        context_lens = torch.tensor(context_lens, dtype=torch.int32, pin_memory=True).cuda(non_blocking=True)
+        set_context(True,num_decode, cu_seqlens_q, cu_seqlens_k, max_seqlen_q, max_seqlen_k, slot_mapping,context_lens, block_tables, need_logits_tensor)
         return input_ids, positions,need_logits
     
     def prepare_decode(self, seqs: list[Sequence]):

@@ -70,14 +70,21 @@ class Attention(nn.Module):
                                         max_seqlen_k=context.max_seqlen_k, cu_seqlens_k=context.cu_seqlens_k,
                                         softmax_scale=self.scale, causal=True, block_table=context.block_tables)
             else:
-                o_decode = flash_attn_with_kvcache(q.unsqueeze(1), k_cache, v_cache,
-                                        cache_seqlens=context.context_lens, block_table=context.block_tables, 
+                # 如何判别prefix的情况？
+                # 出于控制变量考虑：混合批时不管是否是prefix prefill都是使用kvcache，此处先不做修改。
+                assert context.block_tables is not None
+                if context.block_tables is not None:    # prefix cache
+                    k, v = k_cache, v_cache
+                num_d = context.num_decode
+                o_decode = flash_attn_with_kvcache(q[:num_d].unsqueeze(1), k_cache, v_cache,
+                                        cache_seqlens=context.context_lens[:num_d], block_table=context.block_tables[:num_d], 
                                         softmax_scale=self.scale, causal=True)
-                o_prefill = flash_attn_varlen_func(q, k, v,
-                                                        max_seqlen_q=context.max_seqlen_q, cu_seqlens_q=context.cu_seqlens_q,
-                                                        max_seqlen_k=context.max_seqlen_k, cu_seqlens_k=context.cu_seqlens_k,
-                                                        softmax_scale=self.scale, causal=True, block_table=context.block_tables)
-                o = torch.cat([o_decode.squeen(1),o_prefill])
+                
+                o_prefill = flash_attn_varlen_func(q[num_d:], k, v,
+                                                        max_seqlen_q=context.max_seqlen_q, cu_seqlens_q=torch.cat([torch.zeros(1,dtype=torch.int32, device=q.device), context.cu_seqlens_q[num_d+1:]-context.cu_seqlens_q[num_d]]),
+                                                        max_seqlen_k=context.max_seqlen_k, cu_seqlens_k=torch.cat([torch.zeros(1,dtype=torch.int32, device=q.device), context.cu_seqlens_k[num_d+1:]-context.cu_seqlens_k[num_d]]),
+                                                        softmax_scale=self.scale, causal=True, block_table=context.block_tables[num_d:])
+                o = torch.cat([o_decode.squeeze(1),o_prefill])
         else:    # decode
             o = flash_attn_with_kvcache(q.unsqueeze(1), k_cache, v_cache,
                                         cache_seqlens=context.context_lens, block_table=context.block_tables, 
