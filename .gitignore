@@ -194,3 +194,14 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# ---------- 实验产物与一次性排查脚本（本地保留，不入库）----------
+# 结果 JSON 体积大（单次 c1 采集 >2MB），只保留在本地
+experiments/results/
+# 提交前的 bug 排查探针（x1~x7），不属于报告口径
+experiments/x*_*.py
+experiments/x3b_branch.py
+# 历史实验的辅助脚本与批次脚本（结论已并入实验报告）
+experiments/scratch/
+# 采样用文本池，可重新生成
+experiments/*_pool.json
+
