@@ -205,3 +205,4 @@ experiments/scratch/
 # 采样用文本池，可重新生成
 experiments/*_pool.json
 
+.workbuddy/
